@@ -1,4 +1,4 @@
-;;; orl.el --- Org-roam Logseq converter -*- coding: utf-8; lexical-binding: t; -*-
+;;; org-roam-logseq.el --- Org-roam Logseq converter -*- coding: utf-8; lexical-binding: t; -*-
 
 ;; Copyright (C) 2023, Ivan Danov
 ;; Author: Ivan Danov
@@ -39,4 +39,4 @@
 
 (provide 'org-roam-logseq)
 
-;;; orl.el ends here
+;;; org-roam-logseq.el ends here
