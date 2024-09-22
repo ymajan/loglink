@@ -3,9 +3,9 @@
 ;; Copyright (C) 2023, Ivan Danov
 ;; Author: Ivan Danov
 ;; URL: https://github.com/idanov/org-roam-logseq.el/
-;; Keywords: org-mode, roam, logseq
+;; Tags: org-mode, roam, logseq
 ;; Version: 0.1.1
-;; Package-Requires: ((emacs "26.1") (org-roam "2.0") (f "0.20.0"))
+;; Prerequisites: ((emacs "26.1") (org-roam "2.0") (f "0.20.0"))
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -15,8 +15,6 @@
 
 ;;; Code:
 
-(require 'cl-lib)
-(require 'org)
 (require 'org-roam)
 (require 'f)
 
