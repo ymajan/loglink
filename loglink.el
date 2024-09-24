@@ -61,27 +61,31 @@
 (defun loglink-logseq-journal-p (file) (string-match-p (concat "^" loglink-logseq-journals) file))
 
 (defun loglink-ensure-file-id (file)
-  "Visit an existing FILE, AND ensure it has an id. \
-Return whether a new buffer was created."
+  "Visit an existing FILE, ensure title and id. Return if new buffer."
   (setq file (f-expand file))
-  (if (loglink-logseq-journal-p file)
-      ;; do nothing for journal files
-      ;; TODO double check this is actually desired behaviour
-      `(nil . nil)
-    (let* ((buf (get-file-buffer file))
-           (was-modified (buffer-modified-p buf))
-           (new-buf nil)
-           has-data
-           org
-           changed
-           sec-end)
-      (when (not buf)
-        (setq buf (find-file-noselect file))
-        (setq new-buf t))
-      (set-buffer buf)
-      (setq org (org-element-parse-buffer))
-      (setq has-data (cddr org))
-      (goto-char 1)
+  (let* ((buf (get-file-buffer file))
+         (was-modified (and buf (buffer-modified-p buf)))
+         (new-buf nil)
+         has-data
+         org
+         changed
+         sec-end)
+    (when (not buf)
+      (setq buf (find-file-noselect file))
+      (setq new-buf t))
+    (set-buffer buf)
+    (setq org (org-element-parse-buffer))
+    (setq has-data (cddr org))
+    (goto-char 1)
+    (if (loglink-logseq-journal-p file)
+        ;; For journal files, just set the title
+        (progn
+          (when (not (org-collect-keywords ["title"]))
+            (setq changed t)
+            (goto-char (point-min))
+            (insert (format "#+title: %s\n\n" (file-name-nondirectory file)))
+            (setq org (org-element-parse-buffer))))
+      ;; For non-journal files, ensure ID and title
       (when (not (and (eq 'section (org-element-type (nth 2 org))) (org-roam-id-at-point)))
         ;; this file has no file id
         (setq changed t)
@@ -103,10 +107,10 @@ Return whether a new buffer was created."
             (setq org (org-element-parse-buffer)))
           ;; in case of no title, make the title the same as the filename
           (let ((title (file-name-sans-extension (file-name-nondirectory file))))
-            (insert (format "#+title: %s" title)))))
-      ;; ensure org-roam knows about the new id and/or title
-      (when changed (save-buffer))
-      (cons new-buf buf))))
+            (insert (format "#+title: %s" title))))))
+    ;; ensure org-roam knows about the new id and/or title
+    (when changed (save-buffer))
+    (cons new-buf buf)))
 
 (defun loglink-convert-logseq-file (buf)
   "Convert fuzzy and file:../pages logseq links in the BUF to id links."
@@ -208,26 +212,29 @@ Return whether a new buffer was created."
 
 (defun org-roam-logseq-patch (files)
   (let (created bufs unmodified cur bad buf)
-    ;; make sure all the files have file ids
+    ;; Make sure all the files have file IDs
     (dolist (file-path files)
       (setq file-path (f-expand file-path))
       (setq cur (loglink-ensure-file-id file-path))
       (setq buf (cdr cur))
       (push buf bufs)
-      (when (and (not (loglink-logseq-journal-p file-path))
-                 (not buf))
+      ;; Include journal files in 'bad' if they cannot be processed
+      (when (not buf)
         (push file-path bad))
       (when (not (buffer-modified-p buf))
         (push buf unmodified))
       (when (car cur)
         (push buf created)))
-    ;; patch fuzzy links
+    ;; Patch fuzzy links
     (mapc 'loglink-convert-logseq-file
           (seq-filter 'identity bufs))
+    ;; Save modified buffers
     (dolist (buf unmodified)
       (when (buffer-modified-p buf)
-        (save-buffer unmodified)))
+        (save-buffer buf)))
+    ;; Close buffers that were created during processing
     (mapc 'kill-buffer created)
+    ;; Report any files that could not be processed
     (when bad
       (message "Bad items: %s" bad))
     nil))
