@@ -47,34 +47,27 @@
 (require 'org-roam)
 (require 'f)
 
-;; logseq folder same as org-roam directory
-(defvar loglink-folder org-roam-directory
-  "The root folder for Logseq files.")
+;; Your logseq directory should be inside your org-roam directory,
+;; put the directory you use here
+(defvar loglink-logseq-folder org-roam-directory)
 
-(defvar loglink-pages (f-expand "pages" loglink-folder)
-  "The folder for Logseq pages.")
+;; You probably don't need to change these values
+(defvar loglink-logseq-pages (f-expand (f-join loglink-logseq-folder "pages")))
+(defvar loglink-logseq-journals (f-expand (f-join loglink-logseq-folder "journals")))
+;; ignore files matching loglink-logseq-exclude-pattern
+;; default: exclude all files in the logseq/bak/ folder
+(defvar loglink-logseq-exclude-pattern (string-join (list "^" (file-truename loglink-logseq-folder) "/logseq/bak/.*$")))
 
-(defvar loglink-journals (f-expand "journals" loglink-folder)
-  "The folder for Logseq journals.")
-
-;; exclude files in logseq/bak/ folder via regex
-(defvar loglink-exclude-pattern
-  (concat "^" (regexp-quote (file-truename loglink-folder)) "/logseq/bak/.*$")
-  "Regex pattern to exclude files in the logseq/bak/ folder.")
-
-(defun loglink-journal-p (file)
-  "Return t if FILE is a Logseq journal file."
-  (string-prefix-p loglink-journals (expand-file-name file)))
+(defun loglink-logseq-journal-p (file) (string-match-p (concat "^" loglink-logseq-journals) file))
 
 (defun loglink-ensure-file-id (file)
-  "Ensure FILE has an ID and a title."
+  "Visit an existing FILE, AND ensure it has an id. \
+Return whether a new buffer was created."
   (setq file (f-expand file))
-  (if (loglink-journal-p file)
+  (if (loglink-logseq-journal-p file)
       ;; do nothing for journal files
       ;; TODO double check this is actually desired behaviour
-      (message "Skipping journal file: %s" file)
-    '(nil . nil)
-    ;; Else, proceed to ensure ID and title
+      `(nil . nil)
     (let* ((buf (get-file-buffer file))
            (was-modified (buffer-modified-p buf))
            (new-buf nil)
@@ -110,8 +103,7 @@
             (setq org (org-element-parse-buffer)))
           ;; in case of no title, make the title the same as the filename
           (let ((title (file-name-sans-extension (file-name-nondirectory file))))
-            (insert (format "#+title: %s" title)))
-          ))
+            (insert (format "#+title: %s" title)))))
       ;; ensure org-roam knows about the new id and/or title
       (when changed (save-buffer))
       (cons new-buf buf))))
@@ -132,7 +124,7 @@
           (delete-region (org-element-property :begin link) (org-element-property :end link))
           ;; note, this format string is reall =[[%s][%s]]= but =%= is a markup char so one's hidden
           (insert newlink)
-          (message "Converting logseq file %s link from %s to %s" (buffer-file-name buf) (org-element-property :raw-link link) newlink)))
+          (message "Convering logseq file %s link from %s to %s" (buffer-file-name buf) (org-element-property :raw-link link) newlink)))
       ;; ensure org-roam knows about the changed links
       (when changed (save-buffer)))))
 
@@ -187,7 +179,7 @@
             newlink))))))
 
 (defun loglink-roam-file-modified-p (file-path)
-  (and (not (string-match-p loglink-exclude-pattern (file-truename file-path)))
+  (and (not (string-match-p loglink-logseq-exclude-pattern (file-truename file-path)))
        (let ((content-hash (org-roam-db--file-hash file-path))
              (db-hash (caar (org-roam-db-query [:select hash :from files
                                                 :where (= file $s1)] file-path))))
@@ -196,7 +188,7 @@
 (defun loglink-modified-logseq-files ()
   (emacsql-with-transaction (org-roam-db)
     (seq-filter 'loglink-roam-file-modified-p
-                (org-roam--list-files loglink-folder))))
+                (org-roam--list-files loglink-logseq-folder))))
 
 (defun loglink-check-logseq ()
   (interactive)
@@ -247,6 +239,7 @@
     (progn
       (loglink-ensure-file-id (buffer-file-name (current-buffer)))
       (loglink-convert-logseq-file (current-buffer)))))
+
 
 (add-hook 'org-mode-hook #'org-roam-logseq-hook)
 
