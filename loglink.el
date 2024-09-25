@@ -47,6 +47,19 @@
 (require 'org-roam)
 (require 'f)
 
+;; useful when you FUCK up
+(defun loglink-remove-titles-in-directory (directory)
+  "Remove titles from all pages in the specified DIRECTORY."
+  (interactive "DDirectory: ")
+  (let ((files (directory-files directory t "\\.org$")))
+    (dolist (file files)
+      (with-current-buffer (find-file-noselect file)
+        (goto-char (point-min))
+        (when (re-search-forward "^#\\+TITLE:.*\n" nil t)
+          (replace-match "")
+          (save-buffer))
+        (kill-buffer)))))
+
 ;; Your logseq directory should be inside your org-roam directory,
 ;; put the directory you use here
 (defvar loglink-logseq-folder org-roam-directory)
@@ -61,10 +74,15 @@
 (defun loglink-logseq-journal-p (file) (string-match-p (concat "^" loglink-logseq-journals) file))
 
 (defun loglink-ensure-file-id (file)
-  "Visit an existing FILE, ensure title and id. Return if new buffer."
+  "Visit an existing file, ensure it has an id, return whether a new buffer was created."
   (setq file (f-expand file))
+  ;; Remove the condition that skips journal files
+  ;; (if (loglink-logseq-journal-p file)
+  ;;     ;; Do nothing for journal files
+  ;;     `(nil . nil)
+  ;;   ;; Continue processing for all files, including journal files
   (let* ((buf (get-file-buffer file))
-         (was-modified (and buf (buffer-modified-p buf)))
+         (was-modified (buffer-modified-p buf))
          (new-buf nil)
          has-data
          org
@@ -77,43 +95,35 @@
     (setq org (org-element-parse-buffer))
     (setq has-data (cddr org))
     (goto-char 1)
-    (if (loglink-logseq-journal-p file)
-        ;; For journal files, just set the title
-        (progn
-          (when (not (org-collect-keywords ["title"]))
-            (setq changed t)
-            (goto-char (point-min))
-            (insert (format "#+title: %s\n\n" (file-name-nondirectory file)))
-            (setq org (org-element-parse-buffer))))
-      ;; For non-journal files, ensure ID and title
-      (when (not (and (eq 'section (org-element-type (nth 2 org))) (org-roam-id-at-point)))
-        ;; this file has no file id
+    (when (not (and (eq 'section (org-element-type (nth 2 org))) (org-roam-id-at-point)))
+      ;; This file has no file id
+      (setq changed t)
+      (when (eq 'headline (org-element-type (nth 2 org)))
+        ;; If there's no section before the first headline, add one
+        (insert "\n")
+        (goto-char 1))
+      (org-id-get-create)
+      (setq org (org-element-parse-buffer)))
+    (when (nth 3 org)
+      (when (not (org-collect-keywords ["title"]))
+        ;; No title -- ensure there's a blank line at the section end
         (setq changed t)
-        (when (eq 'headline (org-element-type (nth 2 org)))
-          ;; if there's no section before the first headline, add one
+        (setq sec-end (org-element-property :end (nth 2 org)))
+        (goto-char (1- sec-end))
+        (when (and (not (equal "\n\n" (buffer-substring-no-properties (- sec-end 2) sec-end))))
           (insert "\n")
-          (goto-char 1))
-        (org-id-get-create)
-        (setq org (org-element-parse-buffer)))
-      (when (nth 3 org)
-        (when (not (org-collect-keywords ["title"]))
-          ;; no title -- ensure there's a blank line at the section end
-          (setq changed t)
-          (setq sec-end (org-element-property :end (nth 2 org)))
-          (goto-char (1- sec-end))
-          (when (and (not (equal "\n\n" (buffer-substring-no-properties (- sec-end 2) sec-end))))
-            (insert "\n")
-            (goto-char (1- (point)))
-            (setq org (org-element-parse-buffer)))
-          ;; in case of no title, make the title the same as the filename
-          (let ((title (file-name-sans-extension (file-name-nondirectory file))))
-            (insert (format "#+title: %s" title))))))
-    ;; ensure org-roam knows about the new id and/or title
+          (goto-char (1- (point)))
+          (setq org (org-element-parse-buffer)))
+        ;; In case of no title, make the title the same as the filename
+        (let ((title (file-name-sans-extension (file-name-nondirectory file))))
+          (insert (format "#+title: %s" title)))
+        ))
+    ;; Ensure org-roam knows about the new id and/or title
     (when changed (save-buffer))
     (cons new-buf buf)))
 
 (defun loglink-convert-logseq-file (buf)
-  "Convert fuzzy and file:../pages logseq links in the BUF to id links."
+  "convert fuzzy and file:../pages logseq links in the file to id links"
   (save-excursion
     (let* (changed
            link)
@@ -212,13 +222,13 @@
 
 (defun org-roam-logseq-patch (files)
   (let (created bufs unmodified cur bad buf)
-    ;; Make sure all the files have file IDs
+    ;; Make sure all the files have file ids
     (dolist (file-path files)
       (setq file-path (f-expand file-path))
       (setq cur (loglink-ensure-file-id file-path))
       (setq buf (cdr cur))
       (push buf bufs)
-      ;; Include journal files in 'bad' if they cannot be processed
+      ;; Remove the condition that excludes journal files from the 'bad' list
       (when (not buf)
         (push file-path bad))
       (when (not (buffer-modified-p buf))
@@ -228,13 +238,10 @@
     ;; Patch fuzzy links
     (mapc 'loglink-convert-logseq-file
           (seq-filter 'identity bufs))
-    ;; Save modified buffers
     (dolist (buf unmodified)
       (when (buffer-modified-p buf)
         (save-buffer buf)))
-    ;; Close buffers that were created during processing
     (mapc 'kill-buffer created)
-    ;; Report any files that could not be processed
     (when bad
       (message "Bad items: %s" bad))
     nil))
@@ -247,8 +254,8 @@
       (loglink-ensure-file-id (buffer-file-name (current-buffer)))
       (loglink-convert-logseq-file (current-buffer)))))
 
-
 (add-hook 'org-mode-hook #'org-roam-logseq-hook)
+
 
 (provide 'loglink)
 
