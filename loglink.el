@@ -256,6 +256,8 @@
 
 (add-hook 'org-mode-hook #'org-roam-logseq-hook)
 
+(add-hook 'window-setup-hook #'loglink-check-logseq))
+
 
 (provide 'loglink)
 
