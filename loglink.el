@@ -46,6 +46,9 @@
 
 (require 'org-roam)
 (require 'f)
+;; Your logseq directory should be inside your org-roam directory,
+;; put the directory you use here
+(defvar loglink-logseq-folder org-roam-directory)
 
 ;; useful when you FUCK up
 (defun loglink-remove-titles-in-directory (directory)
@@ -59,10 +62,6 @@
           (replace-match "")
           (save-buffer))
         (kill-buffer)))))
-
-;; Your logseq directory should be inside your org-roam directory,
-;; put the directory you use here
-(defvar loglink-logseq-folder org-roam-directory)
 
 ;; You probably don't need to change these values
 (defvar loglink-logseq-pages (f-expand (f-join loglink-logseq-folder "pages")))
