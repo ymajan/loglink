@@ -46,9 +46,6 @@
 
 (require 'org-roam)
 (require 'f)
-;; Your logseq directory should be inside your org-roam directory,
-;; put the directory you use here
-(defvar loglink-logseq-folder org-roam-directory)
 
 ;; useful when you FUCK up
 (defun loglink-remove-titles-in-directory (directory)
@@ -63,6 +60,10 @@
           (save-buffer))
         (kill-buffer)))))
 
+;; Your logseq directory should be inside your org-roam directory,
+;; put the directory you use here
+(defvar loglink-logseq-folder org-roam-directory)
+
 ;; You probably don't need to change these values
 (defvar loglink-logseq-pages (f-expand (f-join loglink-logseq-folder "pages")))
 (defvar loglink-logseq-journals (f-expand (f-join loglink-logseq-folder "journals")))
@@ -75,11 +76,6 @@
 (defun loglink-ensure-file-id (file)
   "Visit an existing file, ensure it has an id, return whether a new buffer was created."
   (setq file (f-expand file))
-  ;; Remove the condition that skips journal files
-  ;; (if (loglink-logseq-journal-p file)
-  ;;     ;; Do nothing for journal files
-  ;;     `(nil . nil)
-  ;;   ;; Continue processing for all files, including journal files
   (let* ((buf (get-file-buffer file))
          (was-modified (buffer-modified-p buf))
          (new-buf nil)
