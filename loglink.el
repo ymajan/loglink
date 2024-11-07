@@ -10,7 +10,7 @@
 ;; URL: https://github.com/idanov/org-roam-logseq.el/
 ;; Tags: org-mode, roam, logseq
 ;; Version: 0.1.1
-;; Prerequisites: ((emacs "26.1") (org-roam "2.0") (f "0.20.0"))
+;; Prerequisites: ((emacs "29.1") (org-roam "2.0") (f "0.20.0"))
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -71,50 +71,76 @@
 ;; default: exclude all files in the logseq/bak/ folder
 (defvar loglink-logseq-exclude-pattern (string-join (list "^" (file-truename loglink-logseq-folder) "/logseq/bak/.*$")))
 
-(defun loglink-logseq-journal-p (file) (string-match-p (concat "^" loglink-logseq-journals) file))
+(defun loglink-logseq-journal-p (file)
+  "Return non-nil if FILE is a Logseq journal file.
+Checks if FILE path starts with the logseq-journals directory path.
+FILE should be a string representing the full file path."
+  (string-match-p (concat "^" loglink-logseq-journals) file))
 
 (defun loglink-ensure-file-id (file)
-  "Visit an existing file, ensure it has an id, return whether a new buffer was created."
-  (setq file (f-expand file))
-  (let* ((buf (get-file-buffer file))
-         (was-modified (buffer-modified-p buf))
+  "Ensure FILE has an ID and title in Org-roam format.
+Visit FILE, create an ID if missing, and ensure proper title formatting.
+If no title exists, use the filename as title.
+
+FILE should be an absolute or relative path to an existing org file.
+
+Return a cons cell (NEW-BUF . BUFFER) where:
+- NEW-BUF is t if a new buffer was created, nil otherwise
+- BUFFER is the buffer containing the file
+
+Side effects:
+- Creates or modifies buffer for FILE
+- May modify FILE content (ID, title, formatting)
+- May save FILE if changes were made"
+  (let* ((abs-file (f-expand file))
+         (buf (get-file-buffer abs-file))
          (new-buf nil)
-         has-data
-         org
-         changed
-         sec-end)
-    (when (not buf)
-      (setq buf (find-file-noselect file))
+         (changed nil))
+    (unless (f-exists-p abs-file)
+      (error "File does not exist: %s" abs-file))
+
+    ;; Buffer handling
+    (unless buf
+      (setq buf (find-file-noselect abs-file))
       (setq new-buf t))
-    (set-buffer buf)
-    (setq org (org-element-parse-buffer))
-    (setq has-data (cddr org))
-    (goto-char 1)
-    (when (not (and (eq 'section (org-element-type (nth 2 org))) (org-roam-id-at-point)))
-      ;; This file has no file id
-      (setq changed t)
-      (when (eq 'headline (org-element-type (nth 2 org)))
-        ;; If there's no section before the first headline, add one
-        (insert "\n")
-        (goto-char 1))
-      (org-id-get-create)
-      (setq org (org-element-parse-buffer)))
-    (when (nth 3 org)
-      (when (not (org-collect-keywords ["title"]))
-        ;; No title -- ensure there's a blank line at the section end
-        (setq changed t)
-        (setq sec-end (org-element-property :end (nth 2 org)))
-        (goto-char (1- sec-end))
-        (when (and (not (equal "\n\n" (buffer-substring-no-properties (- sec-end 2) sec-end))))
-          (insert "\n")
-          (goto-char (1- (point)))
+
+    (with-current-buffer buf
+      (let ((org (org-element-parse-buffer))
+            sec-end)
+        ;; Ensure file has an ID
+        (goto-char (point-min))
+        (unless (and (eq 'section (org-element-type (nth 2 org)))
+                     (org-roam-id-at-point))
+          (setq changed t)
+          ;; Add section if needed
+          (when (eq 'headline (org-element-type (nth 2 org)))
+            (insert "\n")
+            (goto-char (point-min)))
+          (org-id-get-create)
           (setq org (org-element-parse-buffer)))
-        ;; In case of no title, make the title the same as the filename
-        (let ((title (file-name-sans-extension (file-name-nondirectory file))))
-          (insert (format "#+title: %s" title)))
-        ))
-    ;; Ensure org-roam knows about the new id and/or title
-    (when changed (save-buffer))
+
+        ;; Ensure file has a title
+        (when (nth 3 org)
+          (unless (org-collect-keywords ["title"])
+            (setq changed t)
+            ;; Ensure proper spacing
+            (setq sec-end (org-element-property :end (nth 2 org)))
+            (goto-char (1- sec-end))
+            (unless (equal "\n\n" (buffer-substring-no-properties
+                                   (- sec-end 2)
+                                   sec-end))
+              (insert "\n")
+              (goto-char (1- (point))))
+
+            ;; Add title
+            (let ((title (file-name-sans-extension
+                          (file-name-nondirectory abs-file))))
+              (insert (format "#+title: %s" title)))))
+
+        ;; Save if modified
+        (when changed
+          (save-buffer))))
+
     (cons new-buf buf)))
 
 (defun loglink-convert-logseq-file (buf)
